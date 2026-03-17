@@ -46,11 +46,12 @@ const userSchema = new Schema ({
     }
 },{timestamps:true})
 
-userSchema.pre("save", async function (next){
-    if(!this.isModified("password")) return next();
-
-    this.password = bcrypt.hash(this.password, 10)
-    next() 
+userSchema.pre("save", async function (){
+    if(!this.isModified("password")) {
+        return next();
+    }
+    this.password = await bcrypt.hash(this.password, 10)
+     
 })
 userSchema.method.isPasswordCorrect = async function(password){
     return await bcrypt.compare(password, this.password)
@@ -61,7 +62,7 @@ userSchema.method.generateAccessToken = function(){
         {
             _id : this._id,
             email : this.email,
-            userName : this.username,
+            userName : this.userName,
             fullName : this.fullName    // fullName - key hai or |  this.fullName ye database se aari hai
         },
         process.env.ACCESS_TOKEN_SECRET,
