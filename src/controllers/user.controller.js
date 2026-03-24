@@ -10,6 +10,24 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 //     })
 // })
 
+// 5. -> now refresh and token are both we need multiple time so for that we create a separate method for them so that we can reuse them.
+const generateAccessAndRefreshTokens = async(userId) =>{
+  try {
+    const user = await User.findById(userId)
+    const accessToken = user.generateAccessToken()
+    const refreshToken = user.generateRefreshToken()
+
+    // saving refresh token in data base
+    user.refreshToken = refreshToken
+    await user.save({validateBeforeSave: false})
+
+    return{ accessToken, refreshToken}
+
+  } catch (error) {
+    throw new ApiError(500 , "something went wrong while generating refresh and access token")
+  }
+}
+
 const registerUser = asyncHandler(async (req, res) => {
   // 1. get users details from frontend
   // 2. validation - not empty
@@ -99,4 +117,77 @@ const registerUser = asyncHandler(async (req, res) => {
   );
 });
 
-export { registerUser };
+const loginUser = asyncHandler(async (req, res) =>{
+  // 1. req body se -> data le aao
+  // 2. username or email hai ya nahi hai
+  // 3. find the user
+  // 4. if user founded then check the password
+  // 5.if password also checked then -> access and refresh token generate both and send them to user
+  // 6. how to send the token --> using cookies
+  // 7. return response
+  
+  const {email,userName,password} = req.body   //1
+
+  if (!userName || !email) {                   //2
+    throw new ApiError(400,"username or email is required");
+  }
+
+  const user = await User.findOne({            // 3
+    $or : [{userName},{email}]
+  })
+
+  if (!user) {
+    throw new ApiError(404, "User does not exist")
+  }
+
+  const isPasswordValid = await user.isPasswordCorrect(password)  //4
+  if (!isPasswordValid) {
+    throw new ApiError(401, "invalid user credentials")
+  }
+
+  const {refreshToken, accessToken} = await generateAccessAndRefreshTokens(user._id)  //5
+
+  const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+
+  const options = {               // 6
+    httpOnly : true,
+    secure : true
+  }
+
+  return res.status(200).cookie("accessToken",accessToken, options).cookie("refreshToken", refreshToken ,options)
+  .json(
+    new ApiResponse(
+      200,
+      {
+        user: loggedInUser , refreshToken , accessToken
+      },
+      "user logged in successfully"
+    )
+  )
+})
+
+// toh user logout kese karega . toh logout me hume 2 kaam karne hote hai.
+// 1. we have to reset or remove the refresh toke 
+// 2. we have to clear the cookies 
+const logoutUser = asyncHandler(async (req, res) =>{
+  await User.findByIdAndUpdate(                    // 1. first find the user and then clear the refresh token as you see refreshToken: undefined
+    req.user._id,                           
+    {
+      $set :{
+        refreshToken: undefined
+      }
+    },
+    {
+      new: true
+    }
+  )
+
+  const options = {               
+    httpOnly : true,
+    secure : true
+  }
+  return res.status(200).clearCookie("accessToken",options).clearCookie("refreshToken", options).  // 2. here we are clearing the cookie
+  json(new ApiResponse(200, {}, "User logged out successfully"))
+})
+
+export { registerUser,loginUser,logoutUser };
