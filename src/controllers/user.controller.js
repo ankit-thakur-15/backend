@@ -11,22 +11,23 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 // })
 
 // 5. -> now refresh and token are both we need multiple time so for that we create a separate method for them so that we can reuse them.
-const generateAccessAndRefreshTokens = async(userId) =>{
+const generateAccessAndRefreshTokens = async (userId) => {
   try {
-    const user = await User.findById(userId)
-    const accessToken = user.generateAccessToken()
-    const refreshToken = user.generateRefreshToken()
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new ApiError(500, "User not found while generating tokens");
+    }
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+  // saving refresh token in data base
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
 
-    // saving refresh token in data base
-    user.refreshToken = refreshToken
-    await user.save({validateBeforeSave: false})
-
-    return{ accessToken, refreshToken}
-
-  } catch (error) {
+    return { accessToken, refreshToken };
+  }catch (error) {
     throw new ApiError(500 , "something went wrong while generating refresh and access token")
   }
-}
+};
 
 const registerUser = asyncHandler(async (req, res) => {
   // 1. get users details from frontend
@@ -128,13 +129,18 @@ const loginUser = asyncHandler(async (req, res) =>{
   
   const {email,userName,password} = req.body   //1
 
-  if (!userName || !email) {                   //2
+  // Accept login with either username or email.
+  if (!userName && !email) {                   //2
     throw new ApiError(400,"username or email is required");
   }
 
-  const user = await User.findOne({            // 3
-    $or : [{userName},{email}]
-  })
+  const orConditions = [];
+  if (email) orConditions.push({ email });
+  if (userName) orConditions.push({ userName });
+
+  const user = await User.findOne({  //3
+    $or: orConditions,
+  });
 
   if (!user) {
     throw new ApiError(404, "User does not exist")
